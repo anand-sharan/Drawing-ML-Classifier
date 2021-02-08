@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Drawing Classification with respect to Machine Learning</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.5.0/css/bulma.min.css">
+    <style>
+      .navbar {
+        background-color: #1E88E5;
+      }
+      .navbar .header {
+        color: #fff;
+      }
+      #draw-container, #image-preview {
+        background-color: #FFF;
+        border: 1px solid #ddd;
+        display: block;
+        max-width: 500px;
+        max-height: 500px;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="navbar">
+      <div class="container">
+        <div class="navbar-brand">
+          <div class="navbar-item header">
+            Drawing Classification with respect to Machine Learning
+          </div>
+
+          <div class="navbar-burger">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <section class="section">
+      <div class="container">
+        <p class="subtitle">
+          Drawing Canvas
+        </p>
+        <div class="columns">
+          <div class="column is-half">
+            <div id="draw-container"></div>
+            <div class="button is-primary" style="margin-top: 1em;" onclick="resetImage()">Clear</div>
+          </div>
+          <div class="column is-half">
+            <div style="padding-bottom: 1em;">Prediction result</div>
+            <div>
+              <canvas id="image-preview" style="width: 28px; height: 28px;"></canvas>
+            </div>
+            <div class="predict-result" style="margin-top: 1em;">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <script src="{{ url_for('static', filename='sketch.min.js') }}"></script>
+    <script
+      src="https://code.jquery.com/jquery-2.2.4.min.js"
+      integrity="sha256-BbhdlvQf/xTY9gja0Dq3HiwQF8LaCRTXxZKRutelT44="
+      crossorigin="anonymous"></script>
+    <script>
+      var canvasContainer = null;
+      var canvasPreview = null;
+      var canvasContainerCtx = null;
+      var canvasPreviewCtx = null;
+      var imageSize = 500;
+      var inputSize = 28;
+
+      var prevPredictTime = 0;
+
+      var LABELS = [
+        'Bowtie',
+        'Butterfly',
+        'Cake',
+        'Cat',
+        'Dog',
+        'Dolphin',
+        'Dumbbell',
+        'Elephant',
+        'Fish',
+        'Helicopter',
+        'Leaf',
+        'Mountain',
+        'Octagon',
+        'Panda',
+        'Rainbow'
+      ]
+
+      function toPercent(number) {
+        return Math.round(number * 10000) / 100;
+      }
+
+      function predict(input) {
+        var curTime = new Date();
+        if (curTime - prevPredictTime < 50) return ;
+        prevPredictTime = curTime;
+
+        $.ajax({
+          url: '/predict',
+          type: 'POST',
+          data: {
+            img: input.toString()
+          },
+          success: function(res) {
+            res = res.split(",").map(function(x) { return toPercent(parseFloat(x)) });
+            var idx = [];
+            for(var i=0; i<res.length; i++) idx.push(i);
+            idx.sort(function(x, y) {
+              if(res[x] < res[y]) return -1;
+              else if(res[x] > res[y]) return 1;
+              return 0;
+            }).reverse();
+
+            txt = []
+            for(var i=0; i<res.length; i++) {
+              txt.push("<div class='columns'>")
+              txt.push("<div class='column is-one-quarter'>" + LABELS[idx[i]] +  "</div>");
+              txt.push("<div class='column'>" + res[idx[i]] + "%</div>");
+              txt.push("</div>")
+            }
+
+            $(".predict-result").html(txt.join(""));
+          }
+        })
+      }
+
+      function resetImage() {
+        canvasContainerCtx.putImageData(new ImageData(imageSize, imageSize), 0, 0);
+        getPredict();
+      }
+
+      function getPredict() {
+        if (canvasContainer == null) return ;
+        var imageData = canvasContainerCtx.getImageData(0, 0, imageSize, imageSize);
+        imageData = imageData.data;
+        var boxSize = parseInt(imageSize / inputSize);
+
+        function pixelPos(i, j, k, l) {
+          return (imageSize * (i * boxSize + k) + (j * boxSize + l)) * 4;
+        }
+
+        function calcGreyScale(i, j, k, l) {
+          var pos = pixelPos(i, j, k, l);
+          return imageData[pos + 3];
+        }
+
+        var resizedData = new Uint8ClampedArray(inputSize * inputSize * 4);
+        var inputForPredict = new Uint8ClampedArray(inputSize * inputSize);
+        for(var i=0; i<inputSize; i++) {
+          for(var j=0; j<inputSize; j++) {
+            var color = 0;
+            for(var k=0; k<boxSize; k++) {
+              for(var l=0; l<boxSize; l++) {
+                color += calcGreyScale(i, j, k, l);
+              }
+            }
+            color = parseInt(color / (boxSize * boxSize));
+            if (color > 64) color = 255;
+            // color = Math.random() * 256;
+            var resizedDataPos = (i * inputSize + j) * 4;
+            resizedData[resizedDataPos] = 
+            resizedData[resizedDataPos + 1] = 
+            resizedData[resizedDataPos + 2] = 255 - color;
+            resizedData[resizedDataPos + 3] = 255;
+
+            inputForPredict[i * inputSize + j] = color;
+          }
+        }
+
+        canvasPreviewCtx.putImageData(new ImageData(resizedData, 28, 28), 0, 0);
+
+        setTimeout(function() {
+          predict(inputForPredict)
+        }, 0);
+      }
+
+      function canvasContainerResize() {
+        width = $('#draw-container').width() || 500;
+        canvasContainer.width = canvasContainer.height = width;
+      }
+
+      $(function() {
+        canvasContainer = $("#draw-container canvas")[0];
+        canvasContainerCtx = canvasContainer.getContext('2d');
+        canvasPreview = $("#image-preview")[0];
+        canvasPreviewCtx = canvasPreview.getContext('2d');
+
+        canvasPreview.width = canvasPreview.height = inputSize;
+        canvasContainerResize();
+
+        $(window).resize(canvasContainerResize)
+      });
+
+      var isDraw = false;
+      Sketch.create({
+        container: document.getElementById('draw-container'),
+        autoclear: false,
+        fullscreen: false,
+        retina: 'auto',
+        // Event handlers
+        keydown: function() {
+            if ( this.keys.C ) this.clear();
+        },
+        touchstart: function() {
+          isDraw = true;
+        },
+        touchend: function() {
+          isDraw = false;
+        },
+        // Mouse & touch events are merged, so handling touch events by default
+        // and powering sketches using the touches array is recommended for easy
+        // scalability. If you only need to handle the mouse / desktop browsers,
+        // use the 0th touch element and you get wider device support for free.
+        touchmove: function() {
+          if (!isDraw) return ;
+          touch = this.touches[0];
+          this.lineCap = 'round';
+          this.lineJoin = 'round';
+          this.fillStyle = this.strokeStyle = '#000';
+          this.lineWidth = 10;
+          this.beginPath();
+          this.moveTo( touch.ox, touch.oy );
+          this.lineTo( touch.x, touch.y );
+          this.stroke();
+
+          getPredict();
+        }
+      });
+    </script>
+  </body>
+</html>
