@@ -8,7 +8,7 @@ Heroku App:
 
 ## Introduction
 
-The object of this project is the classify drawings done on canvas and perform machine learning classification to provide which kind of image is closer of the input.
+The objective of this project is the classify user drawings using CNN machine learning classification model to predict which kind of image is closer to the input.
 
 ![Web Preview](docs/web-preview.png)
 
